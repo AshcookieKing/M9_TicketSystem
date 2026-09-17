@@ -155,6 +155,34 @@ def _seed_stamps(data):
     return data
 
 
+def _short_signer_name(person):
+    surname = (person.get("surname") or "").strip()
+    name = (person.get("name") or "").strip()
+    patronymic = (person.get("patronymic") or "").strip()
+    initials = "".join(f"{part[0]}." for part in (name, patronymic) if part)
+    return f"{surname} {initials}".strip()
+
+
+def default_line_signers():
+    items = [
+        {"title": "Инженер", "name": "Порозов С.Ю", "email": "m9@tech.ru"},
+        {"title": "Вед.инж", "name": "Пронякин А.В.", "email": "support@tech.ru"},
+    ]
+    seen_names = {item["name"] for item in items}
+    seen_surnames = {item["name"].split()[0] for item in items if item.get("name")}
+    for person in DEFAULT_VISITORS:
+        if "techru" not in (person.get("tags") or []):
+            continue
+        name = _short_signer_name(person)
+        surname = (person.get("surname") or "").strip()
+        if not name or name in seen_names or surname in seen_surnames:
+            continue
+        seen_names.add(name)
+        seen_surnames.add(surname)
+        items.append({"title": "Инженер", "name": name, "email": "m9@tech.ru"})
+    return items
+
+
 class Workspace:
     def __init__(self):
         ensure_dirs()
@@ -163,16 +191,48 @@ class Workspace:
 
     def _ensure_line_signers(self):
         changed = False
-        defaults = [
-            {"title": "Инженер", "name": "Порозов С.Ю", "email": "m9@tech.ru"},
-            {"title": "Вед.инж", "name": "Пронякин А.В.", "email": "support@tech.ru"},
-        ]
+        defaults = default_line_signers()
         for company in self.companies():
-            if not company.get("line_signers"):
+            signers = company.get("line_signers") or []
+            known = {(item.get("name") or "").strip() for item in signers}
+            if not signers:
                 company["line_signers"] = deepcopy(defaults)
                 changed = True
+                continue
+            for item in defaults:
+                name = (item.get("name") or "").strip()
+                if name and name not in known:
+                    signers.append(deepcopy(item))
+                    known.add(name)
+                    changed = True
+            company["line_signers"] = signers
         if changed:
             self.save()
+
+    def upsert_line_signer(self, name, title="Инженер", email=""):
+        company = self.get_company()
+        if not company:
+            return None
+        name = (name or "").strip()
+        if not name:
+            return None
+        signers = company.setdefault("line_signers", [])
+        for signer in signers:
+            if (signer.get("name") or "").strip() == name:
+                if title:
+                    signer["title"] = (title or "").strip() or signer.get("title") or "Инженер"
+                if email:
+                    signer["email"] = (email or "").strip()
+                self.save()
+                return signer
+        signer = {
+            "title": (title or "Инженер").strip() or "Инженер",
+            "name": name,
+            "email": (email or "").strip(),
+        }
+        signers.append(signer)
+        self.save()
+        return signer
 
     def load(self):
         if STORE_FILE.exists():

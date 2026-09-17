@@ -107,6 +107,10 @@ def _download(url: str, dest: Path):
         shutil.copyfileobj(resp, out)
 
 
+def _bat_path(path: Path | str) -> str:
+    return str(path).replace('"', "")
+
+
 def apply_update(release: dict) -> Path:
     if not getattr(sys, "frozen", False):
         raise RuntimeError("Автообновление работает в установленной сборке (EXE).")
@@ -127,6 +131,8 @@ def apply_update(release: dict) -> Path:
         encoding="utf-8",
     )
     data_dir = app_dir / "data"
+    pid = os.getpid()
+    dest_exe = app_dir / "M9_Gate.exe" if onedir else exe_path
     if onedir:
         url = release.get("url")
         if not url:
@@ -146,9 +152,10 @@ def apply_update(release: dict) -> Path:
                 payload = found.parent
             else:
                 raise RuntimeError("В архиве нет M9_Gate.exe")
-        install_lines = [
-            f'xcopy /E /Y /Q "{payload}\\*" "{app_dir}\\" >nul',
-            f'start "" "{app_dir / "M9_Gate.exe"}"',
+        replace_lines = [
+            f'if exist "{_bat_path(dest_exe)}" move /Y "{_bat_path(dest_exe)}" "{_bat_path(dest_exe)}.old" >nul',
+            f'xcopy /E /Y /I /Q "{_bat_path(payload)}\\*" "{_bat_path(app_dir)}\\" >nul',
+            f'if exist "{_bat_path(dest_exe)}.old" del /F /Q "{_bat_path(dest_exe)}.old" >nul 2>&1',
         ]
     else:
         url = release.get("exe_url") or release.get("url")
@@ -158,20 +165,41 @@ def apply_update(release: dict) -> Path:
         if url.lower().endswith(".zip"):
             raise RuntimeError("Для одиночного EXE нужен файл M9_Gate.exe в релизе")
         _download(url, new_exe)
-        install_lines = [
-            f'copy /Y "{new_exe}" "{exe_path}" >nul',
-            f'start "" "{exe_path}"',
+        replace_lines = [
+            f'if exist "{_bat_path(dest_exe)}.old" del /F /Q "{_bat_path(dest_exe)}.old" >nul 2>&1',
+            "set TRY=0",
+            ":copyexe",
+            f'if exist "{_bat_path(dest_exe)}" move /Y "{_bat_path(dest_exe)}" "{_bat_path(dest_exe)}.old" >nul',
+            f'copy /Y "{_bat_path(new_exe)}" "{_bat_path(dest_exe)}" >nul',
+            f'if exist "{_bat_path(dest_exe)}" goto copied',
+            "set /a TRY+=1",
+            "timeout /t 1 /nobreak >nul",
+            "if %TRY% lss 25 goto copyexe",
+            ":copied",
+            f'if exist "{_bat_path(dest_exe)}" if exist "{_bat_path(dest_exe)}.old" del /F /Q "{_bat_path(dest_exe)}.old" >nul 2>&1',
         ]
     bat = work / "install_update.bat"
     bat.write_text(
         "\n".join([
             "@echo off",
             "setlocal",
-            "timeout /t 2 /nobreak >nul",
-            *install_lines[:-1],
-            f'if not exist "{data_dir}" mkdir "{data_dir}"',
-            f'copy /Y "{notice}" "{data_dir / NOTICE_NAME}" >nul',
-            install_lines[-1],
+            f"set PID={pid}",
+            "set WAIT=0",
+            ":waitpid",
+            'tasklist /FI "PID eq %PID%" /NH 2>nul | findstr /C:"%PID%" >nul',
+            "if errorlevel 1 goto ready",
+            "timeout /t 1 /nobreak >nul",
+            "set /a WAIT+=1",
+            "if %WAIT% lss 45 goto waitpid",
+            f"taskkill /PID {pid} /F >nul 2>&1",
+            "timeout /t 1 /nobreak >nul",
+            ":ready",
+            *replace_lines,
+            f'if not exist "{_bat_path(dest_exe)}" if exist "{_bat_path(dest_exe)}.old" move /Y "{_bat_path(dest_exe)}.old" "{_bat_path(dest_exe)}" >nul',
+            f'if not exist "{_bat_path(dest_exe)}" exit /b 1',
+            f'if not exist "{_bat_path(data_dir)}" mkdir "{_bat_path(data_dir)}"',
+            f'copy /Y "{_bat_path(notice)}" "{_bat_path(data_dir / NOTICE_NAME)}" >nul',
+            f'start "" /D "{_bat_path(app_dir)}" "{_bat_path(dest_exe)}"',
             "endlocal",
         ]),
         encoding="utf-8",

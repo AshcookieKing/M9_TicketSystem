@@ -183,7 +183,7 @@ class ComboField(ctk.CTkFrame):
         super().__init__(master, fg_color="transparent")
         ctk.CTkLabel(self, text=label, text_color="#94A3B8", width=210, anchor="w").pack(side="left")
         vals = list(values) or ["-"]
-        self.combo = ctk.CTkComboBox(self, values=vals, width=width, height=34)
+        self.combo = ctk.CTkComboBox(self, values=vals, width=width, height=34, state="normal")
         self.combo.pack(side="left", fill="x", expand=True)
         self.combo.set(vals[0])
 
@@ -534,14 +534,15 @@ HELP_SECTIONS = [
         "Протяжки",
         "Вкладка «Протяжки» — это не пропуск, а письмо техническому директору АО «ММТС-9» "
         "(Ушмайкин К.Э.) на монтаж или демонтаж соединительной линии. Бланк как у 04-08.743 и C03036: "
-        "шапка заявителя, таблица сторон A/B, приложение JSON. Подписывает инженер (Порозов, Пронякин), "
-        "не гендиректор.\n\n"
+        "шапка заявителя, таблица сторон A/B, приложение JSON. Подписывает инженер, не гендиректор. "
+        "Список подписантов можно расширить: впишите ФИО вручную или нажмите «Добавить подписанта» / «В список».\n\n"
         "Как пользоваться:\n"
         "1. В шапке выберите компанию-заявителя (обычно Тех РУ).\n"
         "2. Откройте «Протяжки». Вставьте письмо клиента или уведомление ДЦ как есть.\n"
         "3. Если к письму шло JSON-задание линии — «JSON-задание» и укажите txt/json.\n"
         "4. «Разобрать письмо». Проверьте вид работ, исх. номер, стороны A/B, разъёмы, волокна.\n"
-        "5. Внизу слева «Создать PDF протяжки». Файлы: PDF письма и JSON в data/output.\n\n"
+        "5. Подписанта выберите из списка или впишите ФИО и должность вручную.\n"
+        "6. Внизу слева «Создать PDF протяжки». Файлы: PDF письма и JSON в data/output.\n\n"
         "Два типовых письма:\n"
         "• Отказ от кроссировок («Прошу отказаться от кроссировок: 5276/25 и 5959/24») — демонтаж, "
         "номера исходных заданий в текст, печать обычно выключена.\n"
@@ -554,8 +555,10 @@ HELP_SECTIONS = [
         "Обновления",
         "При доступе в сеть программа сверяет свою сборку с GitHub Releases "
         f"({APP_NAME}). Если вышла более новая версия, появится запрос на обновление: "
-        "скачается архив релиза и приложение перезапустится уже на новой сборке. "
-        "После перезапуска появится окно, что обновление установлено.",
+        "скачается новая сборка, старое окно закроется, и запустится уже обновлённый EXE. "
+        "После перезапуска появится окно, что обновление установлено. "
+        "Если заголовок окна всё ещё показывает старый номер — закройте программу и запустите "
+        "свежий M9_Gate.exe из GitHub Releases поверх старого файла.",
     ),
     (
         "Разработка",
@@ -1130,6 +1133,23 @@ class PassApp(ctk.CTk):
         ):
             self.line_fields[key].pack(fill="x", padx=10, pady=4)
         self.line_fields["signer_name"].combo.configure(command=self._on_line_signer_changed)
+        signer_bar = ctk.CTkFrame(page, fg_color="transparent")
+        signer_bar.pack(fill="x", padx=10, pady=(0, 8))
+        ctk.CTkLabel(
+            signer_bar,
+            text="ФИО можно вписать вручную. «В список» запоминает подписанта для этой компании.",
+            text_color="#64748B",
+            wraplength=640,
+            justify="left",
+        ).pack(side="left", fill="x", expand=True)
+        ctk.CTkButton(
+            signer_bar, text="В список", width=110, height=32, fg_color="#1E293B",
+            command=self._save_current_line_signer,
+        ).pack(side="right")
+        ctk.CTkButton(
+            signer_bar, text="Добавить подписанта", width=190, height=32, fg_color="#1E293B",
+            command=self._add_line_signer,
+        ).pack(side="right", padx=(0, 8))
 
         ctk.CTkLabel(page, text="Сторона А", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10, pady=(12, 4))
         self.line_side_a = self._build_side_fields(page, "a")
@@ -1167,13 +1187,72 @@ class PassApp(ctk.CTk):
         if not getattr(self, "line_fields", None):
             return
         company = self.workspace.get_company()
-        names = [s.get("name") for s in (company.get("line_signers") or [])] or ["-"]
+        names = [s.get("name") for s in (company.get("line_signers") or []) if s.get("name")]
+        typed = ""
+        try:
+            typed = (self.line_fields["signer_name"].combo.get() or "").strip()
+        except Exception:
+            typed = ""
+        current = ((self.line_data or {}).get("signer_name") or typed or "").strip()
+        if current and current not in names:
+            names.append(current)
+        if not names:
+            names = ["-"]
         self.line_fields["signer_name"].combo.configure(values=names)
-        current = (self.line_data or {}).get("signer_name")
-        if current and current in names:
-            self.line_fields["signer_name"].set(current)
-        else:
-            self.line_fields["signer_name"].set(names[0])
+        self.line_fields["signer_name"].set(current or names[0])
+
+    def _save_current_line_signer(self):
+        name = self.line_fields["signer_name"].get()
+        if not name:
+            messagebox.showwarning("Подписант", "Впишите ФИО подписанта.")
+            return
+        self.workspace.upsert_line_signer(
+            name,
+            title=self.line_fields["signer_title"].get() or "Инженер",
+            email=self.line_fields["contact_email"].get(),
+        )
+        if getattr(self, "line_data", None) is not None:
+            self.line_data["signer_name"] = name
+        self._refresh_line_signers()
+        messagebox.showinfo("Подписант", f"«{name}» сохранён в список компании.")
+
+    def _add_line_signer(self):
+        OverlayForm(
+            self,
+            "Новый подписант протяжки",
+            [
+                ("name", "ФИО (как в письме)"),
+                ("title", "Должность"),
+                ("email", "E-mail"),
+            ],
+            {
+                "name": self.line_fields["signer_name"].get(),
+                "title": self.line_fields["signer_title"].get() or "Инженер",
+                "email": self.line_fields["contact_email"].get(),
+            },
+            self._on_line_signer_saved,
+        )
+
+    def _on_line_signer_saved(self, payload):
+        name = (payload.get("name") or "").strip()
+        if not name:
+            messagebox.showwarning("Подписант", "Нужно ФИО.")
+            return
+        title = (payload.get("title") or "Инженер").strip() or "Инженер"
+        email = (payload.get("email") or "").strip()
+        self.workspace.upsert_line_signer(name, title=title, email=email)
+        if getattr(self, "line_data", None) is not None:
+            self.line_data["signer_name"] = name
+            self.line_data["signer_title"] = title
+            self.line_data["contact_name"] = name
+            if email:
+                self.line_data["contact_email"] = email
+        self._refresh_line_signers()
+        self.line_fields["signer_name"].set(name)
+        self.line_fields["signer_title"].set(title)
+        self.line_fields["contact_name"].set(name)
+        if email:
+            self.line_fields["contact_email"].set(email)
 
     def _on_line_signer_changed(self, name):
         company = self.workspace.get_company() or {}
@@ -1843,10 +1922,14 @@ class PassApp(ctk.CTk):
         try:
             from updater import apply_update
             apply_update(release)
-            messagebox.showinfo("Обновление", "Загрузка завершена. Приложение перезапустится.")
-            self.destroy()
         except Exception as exc:
             messagebox.showerror("Обновление", str(exc))
+            return
+        try:
+            self.withdraw()
+        except Exception:
+            pass
+        os._exit(0)
 
     def _open_folder(self, path):
         folder = str(Path(path).resolve().parent)
