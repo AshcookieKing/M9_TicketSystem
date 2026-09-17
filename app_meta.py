@@ -1,7 +1,7 @@
 """Версия приложения и адрес обновлений."""
 
 APP_NAME = "M9 Gate"
-APP_VERSION = "1.2.4-beta"
+APP_VERSION = "1.2.5-beta"
 APP_COMPANY = "Тех.ру"
 APP_DEVELOPER = "Дима"
 APP_DEVELOPER_URL = "https://t.me/ImaGunDi"
