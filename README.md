@@ -17,8 +17,9 @@ python pass_gui.py
 python create_exe.py
 ```
 
-Готовый файл: `dist/M9_Gate/M9_Gate.exe`.  
-Файлы релиза: `dist/M9_Gate.exe` и `dist/M9_Gate.zip`.
+Готовый запуск: `dist/M9_Gate/M9_Gate.exe` (быстрый) или одиночный `dist/M9_Gate.exe`.
+
+Файлы релиза: `M9_Gate.exe` (один файл) и `M9_Gate.zip` (папка для автообновления).
 
 ## Обновления
 

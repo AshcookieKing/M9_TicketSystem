@@ -12,7 +12,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from app_meta import APP_VERSION, GITHUB_REPO, UPDATE_ASSET
+from app_meta import APP_VERSION, GITHUB_REPO, UPDATE_ASSET, UPDATE_EXE
 
 TIMEOUT = 8
 API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
@@ -73,14 +73,16 @@ def fetch_latest_release():
         data = json.loads(resp.read().decode("utf-8"))
     tag = str(data.get("tag_name") or "").strip()
     assets = data.get("assets") or []
-    asset = next((item for item in assets if item.get("name") == UPDATE_ASSET), None)
-    if asset is None and assets:
-        asset = next((item for item in assets if str(item.get("name") or "").endswith(".zip")), None)
+    zip_asset = next((item for item in assets if item.get("name") == UPDATE_ASSET), None)
+    exe_asset = next((item for item in assets if item.get("name") == UPDATE_EXE), None)
+    if zip_asset is None:
+        zip_asset = next((item for item in assets if str(item.get("name") or "").endswith(".zip")), None)
     return {
         "tag": tag,
         "name": data.get("name") or tag,
-        "url": (asset or {}).get("browser_download_url") or "",
-        "size": (asset or {}).get("size") or 0,
+        "url": (zip_asset or {}).get("browser_download_url") or "",
+        "exe_url": (exe_asset or {}).get("browser_download_url") or "",
+        "size": (zip_asset or exe_asset or {}).get("size") or 0,
         "notes": data.get("body") or "",
     }
 
@@ -90,7 +92,9 @@ def check_for_update():
         release = fetch_latest_release()
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
         return None
-    if not release.get("tag") or not release.get("url"):
+    if not release.get("tag"):
+        return None
+    if not release.get("url") and not release.get("exe_url"):
         return None
     if not is_newer(release["tag"], APP_VERSION):
         return None
@@ -106,26 +110,10 @@ def _download(url: str, dest: Path):
 def apply_update(release: dict) -> Path:
     if not getattr(sys, "frozen", False):
         raise RuntimeError("Автообновление работает в установленной сборке (EXE).")
-    url = release.get("url")
-    if not url:
-        raise RuntimeError("В релизе нет файла M9_Gate.zip")
-    work = Path(tempfile.mkdtemp(prefix="m9gate_upd_"))
-    archive = work / UPDATE_ASSET
-    _download(url, archive)
-    extract = work / "unpack"
-    extract.mkdir()
-    shutil.unpack_archive(str(archive), str(extract))
-    payload = extract
-    nested = extract / "M9_Gate"
-    if nested.is_dir() and (nested / "M9_Gate.exe").exists():
-        payload = nested
-    elif not (extract / "M9_Gate.exe").exists():
-        found = next(extract.rglob("M9_Gate.exe"), None)
-        if found:
-            payload = found.parent
-        else:
-            raise RuntimeError("В архиве нет M9_Gate.exe")
     app_dir = install_dir()
+    exe_path = Path(sys.executable).resolve()
+    onedir = (app_dir / "_internal").exists()
+    work = Path(tempfile.mkdtemp(prefix="m9gate_upd_"))
     notice = work / NOTICE_NAME
     notice.write_text(
         json.dumps(
@@ -138,17 +126,52 @@ def apply_update(release: dict) -> Path:
         ),
         encoding="utf-8",
     )
-    bat = work / "install_update.bat"
     data_dir = app_dir / "data"
+    if onedir:
+        url = release.get("url")
+        if not url:
+            raise RuntimeError("В релизе нет файла M9_Gate.zip")
+        archive = work / UPDATE_ASSET
+        _download(url, archive)
+        extract = work / "unpack"
+        extract.mkdir()
+        shutil.unpack_archive(str(archive), str(extract))
+        payload = extract
+        nested = extract / "M9_Gate"
+        if nested.is_dir() and (nested / "M9_Gate.exe").exists():
+            payload = nested
+        elif not (extract / "M9_Gate.exe").exists():
+            found = next(extract.rglob("M9_Gate.exe"), None)
+            if found:
+                payload = found.parent
+            else:
+                raise RuntimeError("В архиве нет M9_Gate.exe")
+        install_lines = [
+            f'xcopy /E /Y /Q "{payload}\\*" "{app_dir}\\" >nul',
+            f'start "" "{app_dir / "M9_Gate.exe"}"',
+        ]
+    else:
+        url = release.get("exe_url") or release.get("url")
+        if not url:
+            raise RuntimeError("В релизе нет файла M9_Gate.exe")
+        new_exe = work / UPDATE_EXE
+        if url.lower().endswith(".zip"):
+            raise RuntimeError("Для одиночного EXE нужен файл M9_Gate.exe в релизе")
+        _download(url, new_exe)
+        install_lines = [
+            f'copy /Y "{new_exe}" "{exe_path}" >nul',
+            f'start "" "{exe_path}"',
+        ]
+    bat = work / "install_update.bat"
     bat.write_text(
         "\n".join([
             "@echo off",
             "setlocal",
             "timeout /t 2 /nobreak >nul",
-            f'xcopy /E /Y /Q "{payload}\\*" "{app_dir}\\" >nul',
+            *install_lines[:-1],
             f'if not exist "{data_dir}" mkdir "{data_dir}"',
             f'copy /Y "{notice}" "{data_dir / NOTICE_NAME}" >nul',
-            f'start "" "{app_dir / "M9_Gate.exe"}"',
+            install_lines[-1],
             "endlocal",
         ]),
         encoding="utf-8",

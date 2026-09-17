@@ -4,7 +4,6 @@
 
 from pathlib import Path
 import os
-import shutil
 import sys
 import zipfile
 import PyInstaller.__main__
@@ -24,27 +23,12 @@ def _fix_build_tcl():
         os.environ["TK_LIBRARY"] = str(tk)
 
 
-def add_data(src: Path, dest: str) -> str:
-    return f"{src}{';' if True else ':'}{dest}"
-
-
-def main():
-    _fix_build_tcl()
-    if not TEMPLATE.exists():
-        raise SystemExit(f"Нет шаблона Excel: {TEMPLATE}")
-    if not ICON.exists():
-        raise SystemExit(f"Нет иконки: {ICON}")
-    if not (ROOT / "data" / "catalog.json").exists():
-        from pass_core import load_catalog
-        load_catalog()
-
-    args = [
+def _common_args():
+    return [
         str(ROOT / "pass_gui.py"),
         "--name=M9_Gate",
-        "--onedir",
         "--windowed",
         "--noconsole",
-        "--clean",
         f"--icon={ICON}",
         f"--add-data={TEMPLATE};.",
         f"--add-data={ROOT / 'data' / 'stamps'};data/stamps",
@@ -70,21 +54,38 @@ def main():
         "--collect-all=customtkinter",
         "--noconfirm",
     ]
-    print("Сборка M9 Gate.exe ...")
-    PyInstaller.__main__.run(args)
+
+
+def main():
+    _fix_build_tcl()
+    if not TEMPLATE.exists():
+        raise SystemExit(f"Нет шаблона Excel: {TEMPLATE}")
+    if not ICON.exists():
+        raise SystemExit(f"Нет иконки: {ICON}")
+    if not (ROOT / "data" / "catalog.json").exists():
+        from pass_core import load_catalog
+        load_catalog()
+
+    common = _common_args()
+    print("Сборка папки dist/M9_Gate ...")
+    PyInstaller.__main__.run(common + ["--onedir", "--clean"])
+
     dist = ROOT / "dist" / "M9_Gate"
     zip_path = ROOT / "dist" / "M9_Gate.zip"
     if dist.exists():
+        if zip_path.exists():
+            zip_path.unlink()
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for file in dist.rglob("*"):
                 if file.is_file():
                     zf.write(file, file.relative_to(dist))
-        print(f"Готово: {dist / 'M9_Gate.exe'}")
-        print(f"Релиз zip: {zip_path}")
-        shutil.copy2(dist / "M9_Gate.exe", ROOT / "dist" / "M9_Gate.exe")
-        print(f"Релиз exe: {ROOT / 'dist' / 'M9_Gate.exe'}")
-    else:
-        print("Готово: dist/M9_Gate/M9_Gate.exe")
+        print(f"ZIP: {zip_path}")
+
+    print("Сборка одиночного dist/M9_Gate.exe ...")
+    PyInstaller.__main__.run(common + ["--onefile"])
+    exe_path = ROOT / "dist" / "M9_Gate.exe"
+    print(f"EXE: {exe_path}")
+    print(f"Папка: {dist / 'M9_Gate.exe'}")
 
 
 if __name__ == "__main__":
