@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*.spec
+.venv/
+venv/
+.env
+build/
+dist/
+output/
+data/output/
+data/workspace.json
+data/preview*.png
+~$*
+*.log
+.DS_Store
+Thumbs.db
+pass_gui.exe
+pip
+*.pdf
+*.xlsx
+!Пример пропуска ТехРу (актуальный).xlsx
