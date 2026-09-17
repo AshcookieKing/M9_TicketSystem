@@ -4,7 +4,9 @@
 
 from pathlib import Path
 import os
+import shutil
 import sys
+import zipfile
 import PyInstaller.__main__
 
 ROOT = Path(__file__).resolve().parent
@@ -73,15 +75,14 @@ def main():
     dist = ROOT / "dist" / "M9_Gate"
     zip_path = ROOT / "dist" / "M9_Gate.zip"
     if dist.exists():
-        import zipfile
-        if zip_path.exists():
-            zip_path.unlink()
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for file in dist.rglob("*"):
                 if file.is_file():
                     zf.write(file, file.relative_to(dist))
         print(f"Готово: {dist / 'M9_Gate.exe'}")
-        print(f"Релиз: {zip_path}")
+        print(f"Релиз zip: {zip_path}")
+        shutil.copy2(dist / "M9_Gate.exe", ROOT / "dist" / "M9_Gate.exe")
+        print(f"Релиз exe: {ROOT / 'dist' / 'M9_Gate.exe'}")
     else:
         print("Готово: dist/M9_Gate/M9_Gate.exe")
 

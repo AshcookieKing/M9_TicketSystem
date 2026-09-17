@@ -37,6 +37,30 @@ def install_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
+NOTICE_NAME = "update_notice.json"
+
+
+def notice_path() -> Path:
+    path = install_dir() / "data"
+    path.mkdir(parents=True, exist_ok=True)
+    return path / NOTICE_NAME
+
+
+def consume_update_notice():
+    path = notice_path()
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        data = {"to": APP_VERSION}
+    try:
+        path.unlink()
+    except OSError:
+        pass
+    return data
+
+
 def fetch_latest_release():
     req = urllib.request.Request(
         API_URL,
@@ -102,13 +126,28 @@ def apply_update(release: dict) -> Path:
         else:
             raise RuntimeError("В архиве нет M9_Gate.exe")
     app_dir = install_dir()
+    notice = work / NOTICE_NAME
+    notice.write_text(
+        json.dumps(
+            {
+                "from": APP_VERSION,
+                "to": release.get("tag") or "",
+                "name": release.get("name") or "",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
     bat = work / "install_update.bat"
+    data_dir = app_dir / "data"
     bat.write_text(
         "\n".join([
             "@echo off",
             "setlocal",
             "timeout /t 2 /nobreak >nul",
             f'xcopy /E /Y /Q "{payload}\\*" "{app_dir}\\" >nul',
+            f'if not exist "{data_dir}" mkdir "{data_dir}"',
+            f'copy /Y "{notice}" "{data_dir / NOTICE_NAME}" >nul',
             f'start "" "{app_dir / "M9_Gate.exe"}"',
             "endlocal",
         ]),

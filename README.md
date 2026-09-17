@@ -17,11 +17,12 @@ python pass_gui.py
 python create_exe.py
 ```
 
-Готовый файл: `dist/M9_Gate/M9_Gate.exe`. Архив релиза: `dist/M9_Gate.zip`.
+Готовый файл: `dist/M9_Gate/M9_Gate.exe`.  
+Файлы релиза: `dist/M9_Gate.exe` и `dist/M9_Gate.zip`.
 
 ## Обновления
 
-Приложение при доступе в сеть сверяет версию с [GitHub Releases](https://github.com/AshcookieKing/M9_TicketSystem/releases). Новая сборка ставится поверх текущей.
+Приложение при доступе в сеть сверяет версию с [GitHub Releases](https://github.com/AshcookieKing/M9_TicketSystem/releases). Новая сборка ставится поверх текущей, после перезапуска показывается окно «Обновление установлено».
 
 ## Разработка
 

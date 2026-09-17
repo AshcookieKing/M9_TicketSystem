@@ -545,7 +545,8 @@ HELP_SECTIONS = [
         "Обновления",
         "При доступе в сеть программа сверяет свою сборку с GitHub Releases "
         f"({APP_NAME}). Если вышла более новая версия, появится запрос на обновление: "
-        "скачается архив релиза и приложение перезапустится уже на новой сборке.",
+        "скачается архив релиза и приложение перезапустится уже на новой сборке. "
+        "После перезапуска появится окно, что обновление установлено.",
     ),
     (
         "Разработка",
@@ -745,7 +746,7 @@ class PassApp(ctk.CTk):
         self._build_layout()
         self._load_company_into_form(reset_people=True)
         self.show_page("mail")
-        self.after(1200, self._schedule_update_check)
+        self.after(400, self._startup_update_flow)
 
     def _on_escape(self, _event=None):
         if self._overlay and self._overlay.winfo_exists():
@@ -1801,6 +1802,23 @@ class PassApp(ctk.CTk):
             self._open_folder(xlsx_path)
         except Exception as exc:
             messagebox.showerror("Выпуск", str(exc))
+
+    def _startup_update_flow(self):
+        self._show_update_notice()
+        self._schedule_update_check()
+
+    def _show_update_notice(self):
+        from updater import consume_update_notice
+        notice = consume_update_notice()
+        if not notice:
+            return
+        target = notice.get("to") or APP_VERSION
+        previous = notice.get("from") or ""
+        extra = f"\nПредыдущая сборка: {previous}" if previous else ""
+        messagebox.showinfo(
+            "Обновление установлено",
+            f"M9 Gate обновлён до {target}.{extra}",
+        )
 
     def _schedule_update_check(self):
         from updater import start_background_check

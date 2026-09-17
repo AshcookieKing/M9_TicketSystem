@@ -9,6 +9,7 @@ dist/
 output/
 data/output/
 data/workspace.json
+data/update_notice.json
 data/preview*.png
 ~$*
 *.log
